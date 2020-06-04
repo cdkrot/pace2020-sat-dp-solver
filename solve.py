@@ -438,7 +438,7 @@ def solve(instance: Instance) -> Result:
             break
         
         lo = hi
-        hi += 1
+        hi *= 2
 
     while hi - lo > 1:
         mi: int = lo + (hi - lo) // 2
