@@ -1,0 +1,263 @@
+\documentclass[a4paper,UKenglish,cleveref, autoref, thm-restate]{lipics-v2019}
+%This is a template for producing LIPIcs articles. 
+%See lipics-manual.pdf for further information.
+%for A4 paper format use option "a4paper", for US-letter use option "letterpaper"
+%for british hyphenation rules use option "UKenglish", for american hyphenation rules use option "USenglish"
+%for section-numbered lemmas etc., use "numberwithinsect"
+%for enabling cleveref support, use "cleveref"
+%for enabling autoref support, use "autoref"
+%for anonymousing the authors (e.g. for double-blind review), add "anonymous"
+%for enabling thm-restate support, use "thm-restate"
+
+%\graphicspath{{./graphics/}}%helpful if your graphic files are in another directory
+
+\bibliographystyle{plainurl}% the mandatory bibstyle
+
+\title{Sat and Dynamic Programming based Tree Depth Solver}
+
+\author{Dmitry Sayutin}{ITMO University, Russia, St. Petersburg \and Higher School of Economics, St. Petersburg campus, Russia \and \url{cdkrot.me}}
+{%email
+}{%orcid
+}{}
+
+%\author{John Q. Public}{Dummy University Computing Laboratory, [optional: Address], Country \and My second affiliation, Country \and \url{http://www.myhomepage.edu} }{johnqpublic@dummyuni.org}{https://orcid.org/0000-0002-1825-0097}{(Optional) author-specific funding acknowledgements}%TODO mandatory, please use full name; only 1 author per \author macro; first two parameters are mandatory, other parameters can be empty. Please provide at least the name of the affiliation and the country. The full address is optional
+
+\authorrunning{D. Sayutin}
+
+\Copyright{Dmitry Sayutin}
+
+\ccsdesc[100]{Theory of computation~Design and analysis of algorithms~Graph algorithms analysis}
+
+\keywords{tree depth, sat, dynamic programming}  %TODO mandatory; please add comma-separated list of keywords
+
+\supplement{https:/doi.org/10.5281/zenodo.3888908}
+\supplement{https://github.com/cdkrot/pace2020-sat-dp-solver} %optional, e.g. related research data, source code, ... hosted on a repository like zenodo, figshare, GitHub, ...
+
+% \acknowledgements{I want to thank \dots}%optional
+
+\nolinenumbers %uncomment to disable line numbering
+
+%\hideLIPIcs  %uncomment to remove references to LIPIcs series (logo, DOI, ...), e.g. when preparing a pre-final version to be uploaded to arXiv or another public repository
+
+%Editor-only macros:: begin (do not touch as author)%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\EventEditors{John Q. Open and Joan R. Access}
+\EventNoEds{2}
+\EventLongTitle{42nd Conference on Very Important Topics (CVIT 2016)}
+\EventShortTitle{CVIT 2016}
+\EventAcronym{CVIT}
+\EventYear{2016}
+\EventDate{December 24--27, 2016}
+\EventLocation{Little Whinging, United Kingdom}
+\EventLogo{}
+\SeriesVolume{42}
+\ArticleNo{23}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This article describes sat-based and dp-based approaches as used in Magnolia solver submitted for PACE 2020
+\end{abstract}
+
+\section{Introduction}
+
+\begin{definition}
+  Given connected undirected graph $G = (V, E)$, we say that rooted tree $T$ with the same vertex set $V$ is a tree-depth decomposition
+  if for any edge $\{x, y\} \in E$ the corresponding vertices are bound by an ancestry relation in $T$ (that is, either $x$ is ancestor
+  of $y$ in $T$ or vice versa).
+\end{definition}
+
+\begin{definition}
+  The tree depth of the graph $G$ is the smallest possible height of the $G$'s tree decomposition.
+\end{definition}
+
+It is clear that this definition is well-defined, since the chain graph of vertices in $V$ (rooted at one of its ends) serves as a valid
+tree-depth decomposition. Tree-depth decomposition will be called \textit{optimal} if it has the smallest possible height. There might be multiple
+optimal tree-depth decomposition for a graph.
+
+The remaining part of this text focuses on discussion of algorithms computing tree depth (and finding optimal tree depth decomposition as well).
+
+\section{Dynamic Programming -- simple, but not useless}
+
+One of the most simple ways to solve the problem is the following dynamic programming on the subsets.
+
+Let $\texttt{dp}(S) \colon 2^V \to \mathbb{Z}$ be the tree-depth of $G[S]$, where $G[S]$ denotes
+induced subgraph to the subset of vertices of $V$.
+
+It can be computed as follows:
+
+$$\texttt{dp}(S) = \begin{cases}
+  0 & if~S = \varnothing \\
+  \min_{v \in S} (1 + \max\limits_{c \in \texttt{cc}(G[S] \setminus \{v\})} \texttt{dp}(c)) & otherwise \\
+\end{cases}
+$$
+
+Here $\texttt{cc}(G)$ denotes set of vertex sets of connected components of $G$. Careful reader will
+probably note, that $G[S]$ might not be connected, so its unclear what $\texttt{dp}(S)$ for such $S$
+should mean. However, if we calculate dp values lazily -- that is, if we calculate only the states
+reachable from $\texttt{dp}(V)$, we will always stay in a single connected component. So for the
+further discussion we simply assume that all mentioned $G[S]$ are non-empty and connected.
+
+It's easy to make an induction proof that this dynamic programming works correctly.
+Also given values of all intermediate states we can compute the tree depth decomposition itself.
+The complexity of this solution is $\mathcal{O}(2^n poly(n))$ where polynomial factor depends on the implementation.
+This is rather slow, however it's possible to prune transitions in dp, to make it work faster. Consider the following
+two lemmas.
+
+\begin{lemma} In case $G[S]$ contains a universal vertex, that is vertex adjacent to every other vertex in $G[S]$, we
+  can only consider transition by this vertex for the set $S$.
+
+  In other words, there exists an optimal tree depth decomposition having this vertex as root.
+\end{lemma}
+
+\begin{proof} We can argue by contradiction: suppose there are no such tree depth decompositions. Examine
+  arbitrary optimal tree depth decomposition $T$ for $G[S]$.
+
+  Let's denote universal vertex as $r$. Observe that all other vertices of $G[S]$ must either be ancestors of $r$ or
+  descendands of $r$. Then if we consider unique path from parent of $r$ to the tree root in $T$, there can't be any branching
+  vertices on it. So if we swap $r$ and root of $T$ (but preserve the tree structure) we can optain another optimal tree depth decomposition.
+\end{proof}
+
+\begin{lemma} In case the $G[S]$ \textbf{doesn't} contain a universal vertex (we can't apply previous lemma), we can skip
+  transitions for all leaf vertices in $G[S]$, that is for all vertices with $\texttt{deg} = 1$ in the induced subgraph.
+
+  In other words, there exists an optimal tree depth decomposition such that its root is not a leaf.
+\end{lemma}
+
+\begin{proof} Suppose the optimal tree depth decomposition $T$ is rooted at leaf vertex $v$, and the only vertex adjacent to $v$ is $u$.
+
+  Now we will show, that there is another optimal tree depth decomposition rooted at $u$. Note that this implies the lemma,
+  since $u$ can't be leaf vertex (unless $G[S]$ consists of two vertices only, however in this case there are two universal vertices).
+
+  Observe that due to $G[S] - v$ being connected, there can be only one neighbor of $v$ in $T$ (though it can be other vertex than $u$).
+
+  Construct the tree $T'$ by swapping vertices $v$ and $u$, while preserving the tree structure. Vertices $v$ and $u$ are still in ancestry
+  relation, and any two vertices in $G[S] - v$ having an ancestry relation in $T$  are in an ancestry relaion in $T'$ as well. So $T'$ is another
+  optimal tree-depth decomposition of $G[S]$, with root $u$.
+\end{proof}
+
+Those lemmas naturally lead to the faster solution by drastically reducing the number of visited states. Unfortunately this
+approach doesn't improve the worst-case asymptotics for the number of visited states.
+
+This solution can be implemented particularly efficiently in case we assumpe computation model of RAM-machine
+and that $n \le w$ (where $w$ denotes the number of bits in machine word).
+
+Those two lemmas are inspired by similar facts proved in \cite{sanchez2017treedepth}.
+
+\section{SAT-based solution}
+
+This solution implements ideas from \cite{ganian2019sat}.
+
+Let's fix an upper bound $L$ on the tree depth. Then we need to decide whether there exists a tree decomposition of
+height at most $L$.
+
+We will solve this decision problem by applying combinatorial reduction to SAT and then simply calling SAT-solver.
+
+Given a tree-depth decomposition $T$ with height at most $L$, we can construct a sequence $P_0, P_1, \ldots, P_L$
+of partitions of the graph vertex set. Where $P_i$ is as follows: suppose we delete all vertices in a
+tree-depth decomposition with depth at most $L - i$ (here, depth of the root is $1$) and partition vertices based on
+connected components. Observe that $P_L$ should have a single connected component, while for $P_0$ all vertices
+are deleted. 
+
+In order to work with such partitions we can introduce an indicator variables $f(v, u, i)$ denoting
+whether vertices $v$ and $u$ are not deleted and are in the same component in $P_i$.
+We will assume, that $f(v, u, i)$ and $f(u, v, i)$ refer to the same variable.
+
+The variable assignment can easily be derived from the tree-depth decomposition. Now we will add some constraints,
+so SAT solution corresponds to almost tree structure as well.
+
+In the list below, unless said otherwise,
+assume $v, u, w$ range over all possible vertices, and $i$ ranges from $0$ to $x$ inclusively,
+
+\begin{alphaenumerate}
+\item If we fix $i$, we should have an equivalency relation (on non-deleted vertices):
+  
+  $f(v, w, i) \lor \lnot f(v, u, i) \lor \lnot f(u, w, i)$ (that is, $f(v, u, i) \land f(u, w, i) \implies f(v, w, i)$.
+
+\item If $i = L$ there is a single connected component, and when $i=0$ there should be no vertices.
+
+  $f(v, u, L) = 1$, $f(v, u, 0) = 0$.
+
+\item The connected components are growing when iterating $i \to i+1$:
+
+  $f(v, u, i) \lor \lnot f(v, u, i - 1)$, where $1 \le i \le L$.
+
+  In other words, $f(v, u, i - 1) \implies f(v, u, i)$.
+
+\item In case two vertices appear in a current layer, they are not connected yet.
+
+  $f(v, v, i - 1) \lor f(u, u, i - 1) \lor \lnot f(v, u, i)$, where $1 \le i \le L$.
+
+  In other words, $\lnot f(v, v, i - 1) \and \lnot f(u, u, i - 1) \implies \lnot f(v, u, i)$.
+\end{alphaenumerate}
+
+Conditions above ensure we've built a well-formed tree. Formally, the conditions above hold for any possible
+partition sequence derived from decomposition tree, and for any variable assignment satisfying (a)--(d), we
+can easily build a tree from it. There is a small caveat that we may get partition sequence in which some
+vertices are introduced at larger depth than one naturaly would do, but this is acceptable for our goals.
+
+Now we need to ensure that endpoints of every edge $\{a, b\} \in E$ are in an ancestry relation.
+This can be done by the following conditions.
+\begin{enumerate}[(e)]
+\item $\lnot f(a, a, i) \lor \lnot f(b, b, i) \lor f(a, a, i - 1) \lor f(a, b, i)$
+	
+	and vice versa: $\lnot f(a, a, i) \lor \lnot f(b, b, i) \lor f(b, b, i - 1) \lor f(a, b, i)$
+
+    For $\{a, b\} \in E$, $1 \le i \le L$.
+\end{enumerate}
+
+% apparently, weaker condition is sufficient, though moron myself hasn't submitted it
+% \lnot f(a, a, i) \lor \lnot f(b, b, i) \lor f(a, b, i)$
+
+\subsection{SAT solution, practical matters}
+
+Given conditions above, one can choose good state-of-the-art SAT solver.
+
+And since the SAT reduction only decides whether the answer is at most $L$, there is a question on how it is better
+to reduce search of minimum tree-depth to it. Out of three methods: linear search, binary search and adaptive binary search,
+the latter works the best, though for some instances linear search is better.
+
+\begin{lstlisting}[caption={Linear Search},label=list:8-6,captionpos=t,abovecaptionskip=-\medskipamount]
+ans = 1
+while (not decide(ans))
+  ++ans
+print(ans)
+\end{lstlisting}  
+
+\begin{lstlisting}[caption={Binary Search},label=list:8-6,captionpos=t,abovecaptionskip=-\medskipamount]
+L = 0, R = n // L is impossible, R is possible
+while (R - L > 1) {
+  M = (L + R) / 2
+  if (decide(M))
+    L = M
+  else
+    R = M
+print(R)
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Adaptive Binary Search},label=list:8-6,captionpos=t,abovecaptionskip=-\medskipamount]
+L = 0, R = 1
+while (not decide(R))
+  L = R, R = 2 * R
+
+// the rest is as in binary search
+while (R - L > 1) {
+  M = (L + R) / 2
+  if (decide(M))
+    L = M
+  else
+    R = M
+print(R)
+\end{lstlisting}  
+
+In adaptive binary search both the number of SAT-solver invocations is reduced and the instance size given to SAT is kept small.
+
+%%
+%% Bibliography
+%%
+
+\bibliography{article}
+
+\end{document}
