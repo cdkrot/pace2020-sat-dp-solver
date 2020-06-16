@@ -1,3 +1,8 @@
+Quick links
+===========
+solver doi: doi.org/10.5281/zenodo.3888908
+compiled sol desc: cdkrot.me/dl/misc/2020-06-15/soldesc.pdf
+
 Preliminaries
 =============
 
